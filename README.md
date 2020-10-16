@@ -10,3 +10,14 @@ a GTK dialog box instead of the console.
 $ find * | fuzzygui | gvim
 ```
 
+## Use case 1
+
+Fuzzy finder for pass manager (regex removes extensions)
+
+```
+function fuzzypass {
+  pushd ~/.password-store
+  find * | fuzzygui | sed 's/\(.*\)\..*/\1/' | xargs pass -c1
+  popd
+}
+```

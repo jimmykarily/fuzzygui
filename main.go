@@ -41,9 +41,6 @@ func main() {
 		return
 	}
 
-	patternChan := make(chan string)
-	go findMatches(patternChan)
-
 	// Initialize GTK without parsing any command line arguments.
 	gtk.Init(nil)
 
@@ -63,7 +60,13 @@ func main() {
 	dialogBox, _ := dialogWindow.GetContentArea()
 	userEntry, _ := gtk.EntryNew()
 	userEntry.SetSizeRequest(250, 0)
+	listBox, _ := gtk.ListBoxNew()
 	dialogBox.PackEnd(userEntry, false, false, 0)
+	dialogBox.PackEnd(listBox, false, false, 0)
+
+	patternChan := make(chan string)
+	matchesChan := make(chan []string)
+	go findMatches(patternChan, matchesChan)
 
 	debounced := debounce.New(100 * time.Millisecond)
 	userEntry.Connect("insert-text", func() {
@@ -75,16 +78,34 @@ func main() {
 
 	dialogWindow.ShowAll()
 	dialogWindow.Run()
-	text, _ := userEntry.GetText()
 	dialogWindow.GetDestroyWithParent()
-	fmt.Println(text)
+
+	for {
+		select {
+		case matches := <-matchesChan:
+			// Cleanup
+			listBox.GetChildren().Foreach(func(child interface{}) {
+				listBox.Remove(child.(gtk.IWidget))
+			})
+			for i, r := range matches {
+				label, _ := gtk.LabelNew(r)
+				listBox.Prepend(label)
+				if i == 0 {
+					listBox.SelectRow(listBox.GetRowAtIndex(i))
+				}
+			}
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 }
 
 // Reads Stdin and receives the pattern on a channel
 // Prints matching results.
-func findMatches(patternChan chan string) {
+func findMatches(patternChan chan string, matchesChan chan []string) {
 	reader := bufio.NewReader(os.Stdin)
 	lines := []string{}
+	results := []string{}
 
 	for {
 		input, _, err := reader.ReadLine()
@@ -92,20 +113,20 @@ func findMatches(patternChan chan string) {
 			break
 		}
 		lines = append(lines, string(input))
-
 	}
 
 	for {
 		select {
 		case pattern := <-patternChan:
 			fmt.Println("new pattern:", pattern)
-			results := fuzzy.Find(pattern, lines)
-			fmt.Println(len(results))
-			// for _, r := range results {
-			// 	fmt.Println(lines[r.Index])
-			// }
+			matches := fuzzy.Find(pattern, lines)
+			for _, r := range matches {
+				results = append(results, lines[r.Index])
+			}
+			fmt.Println("Will send: ", results)
+			matchesChan <- results
 		default:
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 }

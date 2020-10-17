@@ -17,25 +17,8 @@ import (
 
 var (
 	lines        []string
-	listBox      *gtk.ListBox
-	dialogWindow *gtk.MessageDialog
 	currentMatch string
 )
-
-type employee struct {
-	name string
-	age  int
-}
-
-type employees []employee
-
-func (e employees) String(i int) string {
-	return e[i].name
-}
-
-func (e employees) Len() int {
-	return len(e)
-}
 
 // https://coderwall.com/p/zyxyeg/golang-having-fun-with-os-stdin-and-shell-pipes
 func main() {
@@ -51,84 +34,101 @@ func main() {
 	}
 
 	// Initialize GTK without parsing any command line arguments.
-	gtk.Init(nil)
+	//gtk.Init(nil)
 
-	// Create a new toplevel window, set its title, and connect it to the
-	// "destroy" signal to exit the GTK main loop when it is destroyed.
-	win, err := gtk.WindowNew(gtk.WINDOW_POPUP)
+	guiGlade, err := Asset("gui.glade")
 	if err != nil {
-		log.Fatal("Unable to create window:", err)
+		fmt.Println("gui.glade asset was not found. Run go-bindata and re-compile")
+		os.Exit(1)
 	}
-	win.Connect("destroy", func() {
-		gtk.MainQuit()
-	})
 
-	dialogWindow = gtk.MessageDialogNew(win, gtk.DIALOG_MODAL|gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_QUESTION, 0, "Fuzzy search")
-	dialogWindow.SetTitle("Fuzzy search")
-
-	dialogBox, _ := dialogWindow.GetContentArea()
-	userEntry, _ := gtk.EntryNew()
-	userEntry.SetSizeRequest(250, 0)
-	listBox, _ = gtk.ListBoxNew()
-	dialogBox.PackEnd(userEntry, false, false, 0)
-	dialogBox.PackEnd(listBox, false, false, 0)
-
-	debounced := debounce.New(100 * time.Millisecond)
-	userEntry.Connect("changed", func() {
-		debounced(func() {
-			pattern, _ := userEntry.GetText()
-			matches := findMatches(pattern, &lines)
-			// Cleanup
-			_, err = glib.IdleAdd(CleanList)
-
-			numOfResults := 0
-			matchesLen := len(matches)
-			if matchesLen > 10 {
-				numOfResults = 10
-			} else {
-				numOfResults = matchesLen
-			}
-			for _, r := range matches[:numOfResults] {
-				label, _ := gtk.LabelNew(r)
-				_, err = glib.IdleAdd(listBox.Prepend, label)
-				_, err = glib.IdleAdd(listBox.ShowAll)
-			}
-			match := ""
-			if matchesLen > 0 {
-				match = matches[0]
-			}
-			_, _ = glib.IdleAdd(SelectFirstRow, match)
-		})
-	})
-
-	userEntry.Connect("key-press-event", func(entry *gtk.Entry, event *gdk.Event) {
-		if gdk.KeyvalFromName("Return") == gdk.EventKeyNewFromEvent(event).KeyVal() {
-			_, err = glib.IdleAdd(PrintSelectionAndExit)
+	const appID = "com.retc3.mytest"
+	app, err := gtk.ApplicationNew(appID, glib.APPLICATION_FLAGS_NONE)
+	if err != nil {
+		log.Fatalln("Couldn't create app:", err)
+	}
+	app.Connect("activate", func() {
+		builder, err := gtk.BuilderNew()
+		if err != nil {
+			log.Fatalln("Couldn't make builder:", err)
 		}
+
+		err = builder.AddFromString(string(guiGlade))
+		if err != nil {
+			log.Fatalln("Couldn't add UI XML to builder:", err)
+		}
+
+		obj, _ := builder.GetObject("main_window")
+		wnd := obj.(*gtk.Window)
+		wnd.ShowAll()
+		app.AddWindow(wnd)
+
+		obj, _ = builder.GetObject("pattern_entry")
+		patternEntry := obj.(*gtk.Entry)
+		obj, _ = builder.GetObject("matches_list_box")
+		listBox := obj.(*gtk.ListBox)
+
+		debounced := debounce.New(100 * time.Millisecond)
+		patternEntry.Connect("changed", func() {
+			debounced(func() {
+				pattern, _ := patternEntry.GetText()
+				matches := findMatches(pattern, &lines)
+				// Cleanup
+				_, err = glib.IdleAdd(CleanList, listBox)
+
+				numOfResults := 0
+				matchesLen := len(matches)
+				if matchesLen > 10 {
+					numOfResults = 10
+				} else {
+					numOfResults = matchesLen
+				}
+				for i, r := range matches[:numOfResults] {
+					label, _ := gtk.LabelNew(r)
+					label.SetXAlign(0)
+					_, err = glib.IdleAdd(func() {
+						listBox.Insert(label, i)
+					})
+				}
+
+				match := ""
+				if matchesLen > 0 {
+					match = matches[0]
+					_, err = glib.IdleAdd(func() {
+						SelectFirstRow(listBox)
+					})
+				}
+				currentMatch = match
+
+				_, err = glib.IdleAdd(listBox.ShowAll)
+			})
+		})
+
+		patternEntry.Connect("key-press-event", func(entry *gtk.Entry, event *gdk.Event) {
+			if gdk.KeyvalFromName("Return") == gdk.EventKeyNewFromEvent(event).KeyVal() {
+				_, err = glib.IdleAdd(PrintSelectionAndExit)
+			}
+		})
+
+		go readLines()
 	})
 
-	go readLines()
-
-	dialogWindow.ShowAll()
-	dialogWindow.Run()
-	dialogWindow.GetDestroyWithParent()
+	app.Run(os.Args)
 }
 
-func CleanList() {
+func CleanList(listBox *gtk.ListBox) {
 	listBox.GetChildren().Foreach(func(child interface{}) {
 		listBox.Remove(child.(gtk.IWidget))
 	})
 }
 
+func SelectFirstRow(listBox *gtk.ListBox) {
+	listBox.SelectRow(listBox.GetRowAtIndex(0))
+}
+
 func PrintSelectionAndExit() {
 	fmt.Print(currentMatch)
 	os.Exit(0)
-}
-
-func SelectFirstRow(match string) {
-	r := listBox.GetRowAtIndex(int(listBox.GetChildren().Length()) - 1)
-	listBox.SelectRow(r)
-	currentMatch = match
 }
 
 func readLines() {

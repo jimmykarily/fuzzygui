@@ -8,7 +8,7 @@ deps:
 	go install github.com/go-bindata/go-bindata/...
 
 docker-builder:
-	docker build -t fuzzygui-builder .
+	docker build -t jimmykarily/fuzzygui-builder .
 
 build-docker:
-	docker run -it -v ${PWD}:/workspace -w /workspace fuzzygui-builder make all
+	docker run -it -v ${PWD}:/workspace -w /workspace jimmykarily/fuzzygui-builder make all

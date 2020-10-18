@@ -10,7 +10,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    container: jimmykarily/fuzzygui:latest
+    container: jimmykarily/fuzzygui-builder:latest
     steps:
     - name: Set up Go 1.x
       uses: actions/setup-go@v2

@@ -15,10 +15,26 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
+const (
+	PatternEntryID   = "pattern_entry"
+	MatchesListboxID = "matches_list_box"
+	MainWindowID     = "main_window"
+	MaxResults       = 10
+)
+
 var (
 	lines        []string
-	currentMatch string
+	patternEntry *gtk.Entry
+	listBox      *gtk.ListBox
+	mainWindow   *gtk.Window
+	desiredRow   int
+	matches      []Match
 )
+
+type Match struct {
+	fuzzy.Match
+	Label *gtk.Label
+}
 
 // https://coderwall.com/p/zyxyeg/golang-having-fun-with-os-stdin-and-shell-pipes
 func main() {
@@ -33,81 +49,44 @@ func main() {
 		return
 	}
 
-	// Initialize GTK without parsing any command line arguments.
-	//gtk.Init(nil)
-
-	guiGlade, err := Asset("gui.glade")
-	if err != nil {
-		fmt.Println("gui.glade asset was not found. Run go-bindata and re-compile")
-		os.Exit(1)
-	}
-
-	const appID = "com.retc3.mytest"
+	const appID = "gr.brainbytes.fuzzygui"
 	app, err := gtk.ApplicationNew(appID, glib.APPLICATION_FLAGS_NONE)
 	if err != nil {
 		log.Fatalln("Couldn't create app:", err)
 	}
 	app.Connect("activate", func() {
-		builder, err := gtk.BuilderNew()
-		if err != nil {
-			log.Fatalln("Couldn't make builder:", err)
-		}
+		initilizeWidgets()
 
-		err = builder.AddFromString(string(guiGlade))
-		if err != nil {
-			log.Fatalln("Couldn't add UI XML to builder:", err)
-		}
-
-		obj, _ := builder.GetObject("main_window")
-		wnd := obj.(*gtk.Window)
-		wnd.ShowAll()
-		app.AddWindow(wnd)
-
-		obj, _ = builder.GetObject("pattern_entry")
-		patternEntry := obj.(*gtk.Entry)
-		obj, _ = builder.GetObject("matches_list_box")
-		listBox := obj.(*gtk.ListBox)
+		mainWindow.ShowAll()
+		app.AddWindow(mainWindow)
 
 		debounced := debounce.New(100 * time.Millisecond)
 		patternEntry.Connect("changed", func() {
 			debounced(func() {
 				pattern, _ := patternEntry.GetText()
-				matches := findMatches(pattern, &lines)
+				matches = findMatches(pattern, &lines, MaxResults)
 				// Cleanup
 				_, err = glib.IdleAdd(CleanList, listBox)
 
-				numOfResults := 0
-				matchesLen := len(matches)
-				if matchesLen > 10 {
-					numOfResults = 10
-				} else {
-					numOfResults = matchesLen
-				}
-				for i, r := range matches[:numOfResults] {
-					label, _ := gtk.LabelNew(r)
-					label.SetXAlign(0)
-					_, err = glib.IdleAdd(func() {
-						listBox.Insert(label, i)
-					})
-				}
-
-				match := ""
-				if matchesLen > 0 {
-					match = matches[0]
-					_, err = glib.IdleAdd(func() {
-						SelectFirstRow(listBox)
-					})
-				}
-				currentMatch = match
-
+				_, err = glib.IdleAdd(func() {
+					for i, match := range matches {
+						listBox.Insert(match.Label, i)
+					}
+				})
+				_, err = glib.IdleAdd(SelectClosestRow)
 				_, err = glib.IdleAdd(listBox.ShowAll)
 			})
 		})
 
-		patternEntry.Connect("key-press-event", func(entry *gtk.Entry, event *gdk.Event) {
-			if gdk.KeyvalFromName("Return") == gdk.EventKeyNewFromEvent(event).KeyVal() {
-				_, err = glib.IdleAdd(PrintSelectionAndExit)
+		mainWindow.Connect("key-press-event", func(entry *gtk.Window, event *gdk.Event) bool {
+			keyval := gdk.EventKeyNewFromEvent(event).KeyVal()
+			for _, key := range []string{"Up", "Down", "Return"} {
+				if keyval == gdk.KeyvalFromName(key) {
+					_, err = glib.IdleAdd(HandleKey, key)
+					return true
+				}
 			}
+			return false
 		})
 
 		go readLines()
@@ -116,18 +95,76 @@ func main() {
 	app.Run(os.Args)
 }
 
+func initilizeWidgets() {
+	builder, err := gtk.BuilderNew()
+	if err != nil {
+		log.Fatalln("Couldn't make builder:", err)
+	}
+
+	guiGlade, err := Asset("gui.glade")
+	if err != nil {
+		fmt.Println("gui.glade asset was not found. Run go-bindata and re-compile")
+		os.Exit(1)
+	}
+
+	err = builder.AddFromString(string(guiGlade))
+	if err != nil {
+		log.Fatalln("Couldn't add UI XML to builder:", err)
+	}
+
+	obj, _ := builder.GetObject(MainWindowID)
+	mainWindow = obj.(*gtk.Window)
+	obj, _ = builder.GetObject(PatternEntryID)
+	patternEntry = obj.(*gtk.Entry)
+	obj, _ = builder.GetObject(MatchesListboxID)
+	listBox = obj.(*gtk.ListBox)
+}
+
+func HandleKey(key string) {
+	switch key {
+	case "Return":
+		PrintSelectionAndExit()
+	case "Up":
+		desiredRow -= 1
+		SelectClosestRow()
+		patternEntry.GrabFocus()
+	case "Down":
+		desiredRow += 1
+		SelectClosestRow()
+		patternEntry.GrabFocus()
+	}
+}
+
+// Select the row above, the row below or the current line respecting
+// the current limits. Won't move below bottom row, above top row and
+// will adjust to closer row if the step is zero but there is no such row
+// (because we may have less results available now)
+func SelectClosestRow() {
+	totalMatches := len(matches)
+	if totalMatches == 0 {
+		desiredRow = -1
+		return
+	}
+
+	if desiredRow > totalMatches-1 {
+		desiredRow = totalMatches - 1
+	} else if desiredRow < 0 {
+		desiredRow = 0
+	}
+
+	listBox.SelectRow(listBox.GetRowAtIndex(desiredRow))
+}
+
 func CleanList(listBox *gtk.ListBox) {
 	listBox.GetChildren().Foreach(func(child interface{}) {
 		listBox.Remove(child.(gtk.IWidget))
 	})
 }
 
-func SelectFirstRow(listBox *gtk.ListBox) {
-	listBox.SelectRow(listBox.GetRowAtIndex(0))
-}
-
 func PrintSelectionAndExit() {
-	fmt.Print(currentMatch)
+	if desiredRow >= 0 {
+		fmt.Print(matches[desiredRow].Str)
+	}
 	os.Exit(0)
 }
 
@@ -145,11 +182,16 @@ func readLines() {
 }
 
 // Looks for fuzzy matches in lines using the pattern
-func findMatches(pattern string, lines *[]string) []string {
-	matches := fuzzy.Find(pattern, *lines)
-	results := []string{}
-	for _, r := range matches {
-		results = append(results, (*lines)[r.Index])
+// and retuns a sclice of the first maxResults Matches
+func findMatches(pattern string, lines *[]string, maxResults int) []Match {
+	results := []Match{}
+	for i, match := range fuzzy.Find(pattern, *lines) {
+		label, _ := gtk.LabelNew(match.Str)
+		label.SetXAlign(0)
+		results = append(results, Match{Match: match, Label: label})
+		if i >= maxResults {
+			break
+		}
 	}
 
 	return results

@@ -1,6 +1,11 @@
+all: deps build
+
 build:
 	go-bindata gui.glade
 	go build -o release/fuzzygui
+
+deps:
+	go install github.com/go-bindata/go-bindata/...
 
 docker-builder:
 	docker build -t fuzzygui-builder .

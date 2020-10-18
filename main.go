@@ -32,7 +32,7 @@ var (
 )
 
 type Match struct {
-	fuzzy.Match
+	Str   string
 	Label *gtk.Label
 }
 
@@ -88,6 +88,8 @@ func main() {
 			}
 			return false
 		})
+
+		patternEntry.Emit("changed") // Emit once to start with all results
 
 		go readLines()
 	})
@@ -182,15 +184,27 @@ func readLines() {
 }
 
 // Looks for fuzzy matches in lines using the pattern
-// and retuns a sclice of the first maxResults Matches
+// and retuns a sclice of the first maxResults Matches.
+// If pattern is empty, it returns unfiltered results.
 func findMatches(pattern string, lines *[]string, maxResults int) []Match {
 	results := []Match{}
-	for i, match := range fuzzy.Find(pattern, *lines) {
-		label, _ := gtk.LabelNew(match.Str)
-		label.SetXAlign(0)
-		results = append(results, Match{Match: match, Label: label})
-		if i >= maxResults {
-			break
+	if pattern == "" {
+		for i, match := range *lines {
+			label, _ := gtk.LabelNew(match)
+			label.SetXAlign(0)
+			results = append(results, Match{Str: match, Label: label})
+			if i >= maxResults {
+				break
+			}
+		}
+	} else {
+		for i, match := range fuzzy.Find(pattern, *lines) {
+			label, _ := gtk.LabelNew(match.Str)
+			label.SetXAlign(0)
+			results = append(results, Match{Str: match.Str, Label: label})
+			if i >= maxResults {
+				break
+			}
 		}
 	}
 

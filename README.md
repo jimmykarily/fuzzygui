@@ -21,3 +21,24 @@ function fuzzypass {
   popd
 }
 ```
+
+## Use case 2
+
+Implement a contacts directory with search and flat files.
+
+We assume a directory structure where each file is named after a contact and each
+line in the file is a phone number or some other contact detail:
+
+```
+~/Dropbox/phones $ cat Ada\ Lovelace
+email: ada@example.com
+phone: +30 1234567890
+```
+
+A script like the following will let you edit the contact using fuzzy search:
+
+find.sh:
+
+```bash
+find * ! -name 'find.sh' -exec awk '{print FILENAME " - " $0}' {} \;  | fuzzygui |  sed -r 's/(.*) -.*/\1/' | xargs -d"\n" gvim
+```

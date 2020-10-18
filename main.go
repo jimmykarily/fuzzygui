@@ -19,7 +19,7 @@ const (
 	PatternEntryID   = "pattern_entry"
 	MatchesListboxID = "matches_list_box"
 	MainWindowID     = "main_window"
-	MaxResults       = 10
+	MaxResults       = 100
 )
 
 var (

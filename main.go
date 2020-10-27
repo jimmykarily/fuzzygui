@@ -79,20 +79,28 @@ func main() {
 		})
 
 		listBox.Connect("selected-rows-changed", func(listbox *gtk.ListBox) bool {
-			desiredRow = listBox.GetSelectedRow().GetIndex()
-			return true
+			_, err = glib.IdleAdd(func() {
+				desiredRow = listBox.GetSelectedRow().GetIndex()
+			})
+			return false
 		})
 
 		mainWindow.Connect("key-press-event", func(entry *gtk.Window, event *gdk.Event) bool {
 			keyval := gdk.EventKeyNewFromEvent(event).KeyVal()
-			for _, key := range []string{"Up", "Down", "Return"} {
-				if keyval == gdk.KeyvalFromName(key) {
-					_, err = glib.IdleAdd(HandleKey, key)
-					return true
-				}
+			switch keyval {
+			case gdk.KeyvalFromName("Up"):
+				listBox.GetSelectedRow().GrabFocus()
+			case gdk.KeyvalFromName("Down"):
+				listBox.GetSelectedRow().GrabFocus()
+			case gdk.KeyvalFromName("Return"):
+				PrintSelectionAndExit()
+			case gdk.KeyvalFromName("Escape"):
+				fmt.Println("")
+				os.Exit(0)
+			default:
+				patternEntry.GrabFocusWithoutSelecting()
 			}
 
-			patternEntry.GrabFocusWithoutSelecting()
 			return false
 		})
 
@@ -127,21 +135,6 @@ func initilizeWidgets() {
 	patternEntry = obj.(*gtk.Entry)
 	obj, _ = builder.GetObject(MatchesListboxID)
 	listBox = obj.(*gtk.ListBox)
-}
-
-func HandleKey(key string) {
-	switch key {
-	case "Return":
-		PrintSelectionAndExit()
-	case "Up":
-		desiredRow -= 1
-		SelectClosestRow()
-		patternEntry.GrabFocus()
-	case "Down":
-		desiredRow += 1
-		SelectClosestRow()
-		patternEntry.GrabFocus()
-	}
 }
 
 // Select the row above, the row below or the current line respecting

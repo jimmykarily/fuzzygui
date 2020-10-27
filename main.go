@@ -78,6 +78,11 @@ func main() {
 			})
 		})
 
+		listBox.Connect("selected-rows-changed", func(listbox *gtk.ListBox) bool {
+			desiredRow = listBox.GetSelectedRow().GetIndex()
+			return true
+		})
+
 		mainWindow.Connect("key-press-event", func(entry *gtk.Window, event *gdk.Event) bool {
 			keyval := gdk.EventKeyNewFromEvent(event).KeyVal()
 			for _, key := range []string{"Up", "Down", "Return"} {
@@ -86,6 +91,8 @@ func main() {
 					return true
 				}
 			}
+
+			patternEntry.GrabFocusWithoutSelecting()
 			return false
 		})
 

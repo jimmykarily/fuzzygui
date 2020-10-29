@@ -7,7 +7,7 @@ a GTK dialog box instead of the console.
 ## Usage
 
 ```
-$ find * | fuzzygui | xargs gvim
+$ xargs -r0a <(find * | fuzzygui) gvim
 ```
 
 ## Use case 1

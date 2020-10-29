@@ -80,7 +80,11 @@ func main() {
 
 		listBox.Connect("selected-rows-changed", func(listbox *gtk.ListBox) bool {
 			_, err = glib.IdleAdd(func() {
-				desiredRow = listBox.GetSelectedRow().GetIndex()
+				if selectedRow := listBox.GetSelectedRow(); selectedRow != nil {
+					desiredRow = selectedRow.GetIndex()
+				} else {
+					desiredRow = -1
+				}
 			})
 			return false
 		})
